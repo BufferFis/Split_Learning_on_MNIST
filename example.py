@@ -5,6 +5,7 @@ import copy
 import idx2numpy
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
+import torch.optim as optim
 
 class ClientModel(nn.Module):
     def __init__(self):
@@ -28,10 +29,10 @@ class ServerModel(nn.Module):
 data_dir = 'mnist_data/MNIST/raw' 
 
 def load_mnist():
-    train_images = idx2numpy.convert_from_file(f'{data_dir}train-images-idx3-ubyte')
+    train_images = idx2numpy.convert_from_file(f'{data_dir}/train-images-idx3-ubyte')
     train_images = train_images.astype(np.float32) / 255
 
-    train_labels = idx2numpy.convert_from_file(f'{data_dir}train-labels-idx1-ubyte')
+    train_labels = idx2numpy.convert_from_file(f'{data_dir}/train-labels-idx1-ubyte')
     train_labels = train_labels.astype(np.float32)/255
 
     test_images = idx2numpy.convert_from_file(f'{data_dir}/t10k-images-idx3-ubyte')
@@ -54,4 +55,39 @@ def load_mnist():
     return train_loader, test_loader
 
 
-    
+train_loader, test_loader = load_mnist()
+
+client_model = ClientModel()
+server_model = ServerModel()
+
+loss = nn.CrossEntropyLoss()
+client_opt = optim.Adam(client_model.parameters(), lr = 0.001)
+server_opt = optim.Adam(server_model.parameters(), lr = 0.001)
+
+
+for epoch in range(5):
+    client_model.train()
+    server_model.train()
+
+    for data, target in train_loader:
+        client_opt.zero_grad()
+        server_opt.zero_grad()
+
+        data = data.view(data.size(0), -1)
+        intermediate = client_model(data)
+        intermediate = intermediate.detach().requires_grad_()
+
+        output = server_model(intermediate)
+        loss_val = loss(output, target)
+
+        loss.backward()
+        server_opt.step()
+
+        intermediate_grad = intermediate.grad.clone()
+
+        intermediate.backward(intermediate_grad)
+        client_opt.step()
+    print(f'Epoch {epoch+1}, Loss: {loss_val.item()}')
+
+
+
